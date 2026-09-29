@@ -4,7 +4,6 @@
 #include <algorithm>    // std::shuffle
 #include <cmath>
 #include <map>
-//#include "glue_inspector.h"
 #include <filesystem>
 #include <windows.h>
 #include <numeric>   // std::iota
@@ -12,9 +11,6 @@
 
 using namespace std;
 using namespace cv;
-
-
-
 // 1. 定义返回结果的容器
 struct GridMeasureResult {
     vector<Vec3f> allCircle; // 圆心信息
@@ -32,74 +28,85 @@ struct NineGridRoiImg
     Rect NineDown{ 0, 0, 0, 0 };
     Rect NineLeft{ 0, 0, 0, 0 };
     Rect NineRight{ 0, 0, 0, 0 };
+
+    Rect NineLeftUp{ 0, 0, 0, 0 };
+    Rect NineLeftDown{ 0, 0, 0, 0 };
+    Rect NineRightUp{ 0, 0, 0, 0 };
+    Rect NineRightDown{ 0, 0, 0, 0 };
+
 } nineGridRoiImg;
 
 // 每个ROI图像的特征
 struct ROIFeature {
-    std::string roiName;      // ROI 名称（如 "Center", "Up" 等）
-    double area;              // 面积
-    double perimeter;         // 周长
-    double width;             // 宽
-    double height;            // 高
-    double aspectRatio;       // 长宽比
-    double circularity;       // 圆形度
-    double meanGray;          // 平均灰度
-    double stdGray;           // 灰度标准差
-}RoiFeature;
+    std::string roiName = "";   // ROI 名称
+    double area = 0.0;          // 面积
+    double perimeter = 0.0;     // 周长
+    double width = 0.0;         // 宽
+    double height = 0.0;        // 高
+    double aspectRatio = 0.0;   // 长宽比
+    double circularity = 0.0;   // 圆形度
+    double meanGray = 0.0;      // 平均灰度
+    double stdGray = 0.0;       // 灰度标准差
+} roiFeature;
 
-// 找图片特征 - 1.矩形高亮区域；2.计算圆孔距离（水平|垂直）3.计算目标ROI；4.特征可视化
+cv::Mat extractRotatedROI(const cv::Mat& img, const cv::RotatedRect& rr);
+cv::RotatedRect GetRegionRotatedROI(const std::vector<cv::Rect>& fullWhite,
+    GridMeasureResult gridMeasureResult);
+// 找图片特征 - 1.矩形高亮区域；2.计算圆孔距离（水平|垂直）3.计算目标整个ROI；4.特征可视化
 vector<Rect> findFullWhiteRectsByIntegral(const Mat& srcImg, int targetWidth = 21, int targetHeight = 13);
 GridMeasureResult MeasureCircleGridDistances(const Mat& srcImg);
-Rect GetRegionRoi(Point pointRx3, GridMeasureResult gridMeasureResult);
+//Rect GetRegionRoi(Point pointRx3, GridMeasureResult gridMeasureResult);
+Rect GetRegionRoi(const vector<Rect>& fullWhite, GridMeasureResult gridMeasureResult);
 Mat WhiteRectVisualize(const Mat& img, const vector<Rect>& fullWhite, const GridMeasureResult& gridMeasureResult, const Rect roi);
 
+// 1.划分 雪花胶水区域 为 9 个ROI；2.划分结果-单张图片可视化；3.划分结果-批量可视化
 cv::Mat NineGridRoi(cv::Mat& testImg, Rect Roi);
-
 void OneImgVisualize(const std::string& imgPath);
 void batchVisualize(const std::string& folderPath);
 
-// 计算ROI 图片 多个特征 - 1. 
+// 计算ROI 图片 多个特征 - 1.计算ROI区域特征；2.计算单张图片所有ROI区域特征
 ROIFeature ExtractROIFeature(const cv::Mat& srcImg, const cv::Rect& roiRect, const std::string& roiName = "ROIFeat");
-// 计算与保存图像数据特 和  加载特征数据
-void extractAndSaveFeatures(const string& goodImgDir, const string& badImgDir, const string& savePath);
+Mat ExtractOneImageFeature(const Mat& testImg);
+
+// 1.计算与保存图像数据特；2.加载特征数据
+void ExtractAndSaveFeatures(const string& goodImgDir, const string& badImgDir, const string& savePath);
 void loadFeatures(const string& loadPath, Mat& trainData, Mat& labels);
 
-// SVM训练
+// 加载特征数据，训练SVM模型
 void trainSVMFromFile(const string& featureFilePath);
 
-// 加载模型，预测图片
+// 1.加载模型，预测图片；2.加载模型，批量预测图片；3.评估预测结果
 int predictImage(const string& modelPath, const string& normPath, const string& imgPath);
-void evaluateSVM(const cv::Ptr<cv::ml::SVM>& svm,
-    const cv::Mat& samples,
-    const cv::Mat& labels,
+void batchPredictFolder(const string& modelPath, const string& normPath,
+    const string& folderPath, bool recursive = false);
+void evaluateSVM(const cv::Ptr<cv::ml::SVM>& svm, const cv::Mat& samples, const cv::Mat& labels,
     const std::string& tag);
-void batchPredictFolder(const string& modelPath,
-    const string& normPath,
-    const string& folderPath,
-    bool recursive = false);
 
 int main()
 {
     SetConsoleOutputCP(CP_UTF8);
-    const string imgPath = "./GlueInspection200PCS/OK100/ZCG12A72745_0101_20260308034335.jpg";
+    SetConsoleCP(CP_UTF8);       // 建议同时设置输入编码
+    //const string imgPath = "./GlueInspection200PCS/OK100/ZCG12A72745_0101_20260308034335.jpg";
     //const string imgPath = "./GlueInspection200PCS/Bad100/broken3.jpg"; // 断胶
     //const string imgPath = "./GlueInspection200PCS/Bad100/less5.jpg"; // 少胶
     //const string imgPath = "./GlueInspection200PCS/Bad100/more11.jpg"; // 多胶
+    //const string imgPath = "./GlueInspection200PCS/Bad100/刮胶59.jpg"; // 多胶
+    const string imgPath = "./GlueInspection200PCS/Bad100/少胶6.jpg"; // 多胶
 
-    const string modelPath = "SVM_Model_39-39_.xml";
-    const string normPath = "NormParams_39-39_.xml";
+    const string modelPath = "SVM_Model_R9_39-39_.xml";
+    const string normPath = "NormParams_R9_39-39_.xml";
     // 批量处理 --- 一张过于倾斜的-刮胶23-无法匹配
     const string goodImgDir = "./GlueInspection200PCS/OK100/";
     const string badImgDir = "./GlueInspection200PCS/Bad100/";
-    const string featureFile = "dataset_features.yml";
+    const string featureFile = "dataset_R9_features.yml";
     //const string folderPath = "./GlueInspection200PCS/Bad100/";
     // 测试单张图片
     //OneImgVisualize(imgPath);
     // 测试所有图片
-    //batchVisualize(folderPath);
+    //batchVisualize(badImgDir);
 
     // 第一次运行：执行特征提取并保存（跑完后注释掉）
-     //extractAndSaveFeatures(goodImgDir, badImgDir, featureFile);
+    //ExtractAndSaveFeatures(goodImgDir, badImgDir, featureFile);
 
     // 后续调试：直接加载数据训练模型
     trainSVMFromFile(featureFile);
@@ -237,28 +244,63 @@ int main()
 void OneImgVisualize(const std::string& imgPath)
 {
     // 测试单张图片
+    std::cout << "image :" << imgPath << endl;
     Mat testImg = imread(imgPath);
     if (testImg.empty()) {
         cerr << "Img read error!" << endl;
     }
-    // 提取目标 ROI
-    vector<Rect> fullWhite = findFullWhiteRectsByIntegral(testImg);
-    if (fullWhite.size() == 7)
-    {
-        Point pointRx3(fullWhite[fullWhite.size() - 3].x, fullWhite[fullWhite.size() - 3].y);
-        GridMeasureResult gridMeasureResult = MeasureCircleGridDistances(testImg);
-        Rect Roi = GetRegionRoi(pointRx3, gridMeasureResult);
-
-        NineGridRoi(testImg, Roi);
-
-        WhiteRectVisualize(testImg, fullWhite, gridMeasureResult, Roi);
-
-    }
     else
-    {
-        cerr << "\nerror :fullWhite.size() != 7 !" << endl;
+    {   // 提取目标 ROI
+        vector<Rect> fullWhite = findFullWhiteRectsByIntegral(testImg);
+        if (fullWhite.size() == 7)
+        {
+            Point pointRx3(fullWhite[fullWhite.size() - 3].x, fullWhite[fullWhite.size() - 3].y);
+            GridMeasureResult gridMeasureResult = MeasureCircleGridDistances(testImg);
 
+            // ---- 3. 算倾斜角 theta = std::atan2(dy, dx); 逆时针为负 ----// 从左到右
+
+            double dx = fullWhite[fullWhite.size() - 1].x - fullWhite[0].x;
+            double dy = fullWhite[fullWhite.size() - 1].y - fullWhite[0].y;
+            double theta = std::atan2(dy, dx);
+            std::cout << "倾斜角 theta = " << theta * 180.0 / CV_PI << " 度" << std::endl;
+            Rect Roi;
+            cv::Mat rotationRoiImg;
+            if (std::abs(theta) < 1.0 * CV_PI / 180.0) {
+                std::cout << "不旋转" << std::endl;
+                Roi = GetRegionRoi(fullWhite, gridMeasureResult);
+            }
+            else {
+                // 1. 求倾斜 ROI
+                cv::RotatedRect rr = GetRegionRotatedROI(fullWhite, gridMeasureResult);
+                // 2. 摆正并提取，输出固定 width x height
+                rotationRoiImg = extractRotatedROI(testImg, rr);
+
+                Roi = Rect(0, 0, rotationRoiImg.cols, rotationRoiImg.rows);
+                cout << "\nretationRoiImg.size:" << rotationRoiImg.size();
+                cv::Mat vis = testImg.clone();
+                testImg = rotationRoiImg;
+
+                cv::Point2f pts[4];
+                rr.points(pts); // 倾斜矩形的 4 个角点坐标填进数组pts
+                for (int i = 0; i < 4; ++i)
+                    cv::line(vis, pts[i], pts[(i + 1) % 4], cv::Scalar(0, 255, 0), 2);
+                cv::circle(vis, cv::Point(pointRx3.x, pointRx3.y), 2, cv::Scalar(0, 0, 255), -1);  // 参考点
+                //cv::imshow("ROI 摆正", rotationRoiImg);
+                cv::imshow("倾斜 ROI", vis);
+                cv::waitKey(0);
+            }
+
+            NineGridRoi(testImg, Roi);
+            WhiteRectVisualize(testImg, fullWhite, gridMeasureResult, Roi);
+            //imwrite("featROI.jpg", testImg);
+        }
+        else
+        {
+            cerr << "\nerror :fullWhite.size() != 7 !" << endl;
+
+        }
     }
+
 }
 
 void batchVisualize(const std::string& folderPath) {
@@ -271,20 +313,25 @@ void batchVisualize(const std::string& folderPath) {
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
         if (ext == ".jpg" || ext == ".png" || ext == ".bmp") {
-            cv::Mat testImg = cv::imread(entry.path().string());
-            std::cout << "image :" << entry.path().string() << endl;
-            if (testImg.empty()) continue;
-            // 提取目标 ROI
-            vector<Rect> fullWhite = findFullWhiteRectsByIntegral(testImg);
-            if (fullWhite.size() != 7) continue;
+
+            OneImgVisualize(entry.path().string());
             ++count;
-            Point pointRx3(fullWhite[fullWhite.size() - 3].x, fullWhite[fullWhite.size() - 3].y);
-            GridMeasureResult gridMeasureResult = MeasureCircleGridDistances(testImg);
-            Rect Roi = GetRegionRoi(pointRx3, gridMeasureResult);
 
-            NineGridRoi(testImg, Roi);
+            /*cv::Mat testImg = cv::imread(entry.path().string());
+            std::cout << "image :" << entry.path().string() << endl;
+            if (testImg.empty()) continue;*/
 
-            WhiteRectVisualize(testImg, fullWhite, gridMeasureResult, Roi);
+            //// 提取目标 ROI
+            //vector<Rect> fullWhite = findFullWhiteRectsByIntegral(testImg);
+            //if (fullWhite.size() != 7) continue;
+            //++count;
+            //Point pointRx3(fullWhite[fullWhite.size() - 3].x, fullWhite[fullWhite.size() - 3].y);
+            //GridMeasureResult gridMeasureResult = MeasureCircleGridDistances(testImg);
+            //Rect Roi = GetRegionRoi(pointRx3, gridMeasureResult);
+
+            //NineGridRoi(testImg, Roi);
+
+            //WhiteRectVisualize(testImg, fullWhite, gridMeasureResult, Roi);
 
         }
     }
@@ -303,7 +350,7 @@ cv::Mat NineGridRoi(cv::Mat& testImg, Rect Roi)
 {
     //vector<Rect> nineRect;
     int Rwidth = Roi.width;
-    int Rheight = Roi.height - 8;
+    int Rheight = Roi.height;
     /*NineGridRoiImg nineGridRoiImg;*/
 
     nineGridRoiImg.RoiCenter = Point(Roi.x + Roi.width / 2 - 1, Roi.y + Roi.height / 2 - 1);
@@ -327,38 +374,35 @@ cv::Mat NineGridRoi(cv::Mat& testImg, Rect Roi)
         nineGridRoiImg.RoiCenter.y - Rheight / 12,
         Rwidth / 3, Rheight / 6);
 
+    nineGridRoiImg.NineLeftUp = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 2 + 1,
+        nineGridRoiImg.RoiCenter.y - Rheight / 2 + 1,
+        Rwidth / 3, Rheight / 3);
+    nineGridRoiImg.NineLeftDown = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 2 + 1,
+        nineGridRoiImg.RoiCenter.y + Rheight / 6 + 1,
+        Rwidth / 3, Rheight / 3);
+    nineGridRoiImg.NineRightUp = Rect(nineGridRoiImg.RoiCenter.x + Rwidth / 6 + 1,
+        nineGridRoiImg.RoiCenter.y - Rheight / 2 + 1,
+        Rwidth / 3, Rheight / 3);
+    nineGridRoiImg.NineRightDown = Rect(nineGridRoiImg.RoiCenter.x + Rwidth / 6 + 1,
+        nineGridRoiImg.RoiCenter.y + Rheight / 6,
+        Rwidth / 3, Rheight / 3);
     cv::rectangle(testImg, nineGridRoiImg.NineCenter, Scalar(0, 255, 0));
     cv::rectangle(testImg, nineGridRoiImg.NineUp, Scalar(0, 255, 0));
     cv::rectangle(testImg, nineGridRoiImg.NineDown, Scalar(0, 255, 0));
     cv::rectangle(testImg, nineGridRoiImg.NineLeft, Scalar(0, 255, 0));
     cv::rectangle(testImg, nineGridRoiImg.NineRight, Scalar(0, 255, 0));
 
-    /*Point Rcenter(Roi.x + Roi.width / 2 - 1, Roi.y + Roi.height / 2 - 1);
-    Rect NineCenter(Rcenter - Point(Rwidth / 6, Rheight / 6), Rcenter + Point(Rwidth / 6, Rheight / 6));
-    Rect NineUp(Rcenter.x - Rwidth / 12, Rcenter.y - Rheight / 2 + 1, Rwidth / 6, Rheight / 3);
-    Rect NineDown(Rcenter.x - Rwidth / 12, Rcenter.y + Rheight / 6 - 1, Rwidth / 6, Rheight / 3);
-    Rect NineLeft(Rcenter.x - Rwidth / 2 + 1, Rcenter.y - Rheight / 12, Rwidth / 3, Rheight / 6);
-    Rect NineRight(Rcenter.x + Rwidth / 6 - 1, Rcenter.y - Rheight / 12, Rwidth / 3, Rheight / 6);
-    cv::rectangle(testImg, NineCenter, Scalar(0, 255, 0));
-    cv::rectangle(testImg, NineUp, Scalar(0, 255, 0));
-    cv::rectangle(testImg, NineDown, Scalar(0, 255, 0));
-    cv::rectangle(testImg, NineLeft, Scalar(0, 255, 0));
-    cv::rectangle(testImg, NineRight, Scalar(0, 255, 0));*/
-
-    /*for (int i = 0; i < 3; i++)
-    {
-        for (int j = 0; j < 3; j++)
-        {
-            nineRect.emplace_back(Rect(Roi.x + Rwidth * j, Roi.y + Rheight * i, Rwidth, Rheight));
-            rectangle(testImg, nineRect[i * 3 + j], Scalar(0, 255, 255));
-        }
-    }*/
+    cv::rectangle(testImg, nineGridRoiImg.NineLeftUp, Scalar(0, 255, 0));
+    cv::rectangle(testImg, nineGridRoiImg.NineLeftDown, Scalar(0, 255, 0));
+    cv::rectangle(testImg, nineGridRoiImg.NineRightUp, Scalar(0, 255, 0));
+    cv::rectangle(testImg, nineGridRoiImg.NineRightDown, Scalar(0, 255, 0));
 
     return testImg;
 }
 
 ROIFeature ExtractROIFeature(const cv::Mat& srcImg, const cv::Rect& roiRect, const std::string& roiName)
 {
+    //feat = ExtractROIFeature(rotationRoiImg, item.second, item.first);
     ROIFeature feat;
     feat.roiName = roiName;
 
@@ -404,7 +448,7 @@ ROIFeature ExtractROIFeature(const cv::Mat& srcImg, const cv::Rect& roiRect, con
     {
         const auto& cnt = contours[maxIdx];
         feat.area = maxArea;
-        feat.perimeter = cv::arcLength(cnt, true);
+        feat.perimeter = cv::arcLength(cnt, true);  // 待确认
 
         // 外接矩形 → 宽高
         cv::Rect bound = cv::boundingRect(cnt);
@@ -421,6 +465,7 @@ ROIFeature ExtractROIFeature(const cv::Mat& srcImg, const cv::Rect& roiRect, con
     else
     {
         // 没找到轮廓，全部置 0
+        std::cout << "find contours error！\n";
         feat.area = feat.perimeter = feat.width = feat.height = 0;
         feat.aspectRatio = feat.circularity = 0;
     }
@@ -594,32 +639,148 @@ Mat WhiteRectVisualize(const Mat& img, const vector<Rect>& fullWhite, const Grid
     return testImg;
 }
 
-Rect GetRegionRoi(const Point pointRx3, GridMeasureResult gridMeasureResult)
+//Rect GetRegionRoi(const Point pointRx3, GridMeasureResult gridMeasureResult)
+Rect GetRegionRoi(const vector<Rect>& fullWhite, GridMeasureResult gridMeasureResult)
 {
-    //Mat testImg = gray.clone();
-    //GridMeasureResult gridMeasureResult = MeasureCircleGridDistances(testImg);
+    Point pointRx3(fullWhite[fullWhite.size() - 3].x, fullWhite[fullWhite.size() - 3].y);
+    Point pointLx2(fullWhite[1].x, fullWhite[1].y);
+
+    double dist = cv::norm(pointRx3 - pointLx2);
+
     int width = 0, radius = 0, height = 0;
+
     if (gridMeasureResult.hDist > 0 && gridMeasureResult.vDist > 0)
     {
-        width = gridMeasureResult.hDist * 3;
+        //width = gridMeasureResult.hDist * 3;
         radius = gridMeasureResult.avgRadius;
-        height = gridMeasureResult.vDist * 3 - radius * 3;
+        height = gridMeasureResult.vDist * 3 - radius * 3 - 8;
     }
     else
     {
+        std::cout << "霍夫圆检测ROI失败，使用经验值\n";
         gridMeasureResult.hDist = 62;
         gridMeasureResult.vDist = 61;
         gridMeasureResult.avgRadius = 12;
-        width = gridMeasureResult.hDist * 3;
+        //width = gridMeasureResult.hDist * 3;
         radius = gridMeasureResult.avgRadius;
-        height = gridMeasureResult.vDist * 3 - radius * 3;
+        height = gridMeasureResult.vDist * 3 - radius * 3 - 8;
     }
-    Point pointRD(pointRx3.x, pointRx3.y - gridMeasureResult.vDist - radius);
+    Point pointRD(pointRx3.x, pointRx3.y - gridMeasureResult.vDist - radius - 4);
+
+    width = static_cast<int>(dist) * 2 - fullWhite[0].width;   // 2
 
     Rect Roi(pointRD.x - width + 1, pointRD.y - height + 1, width, height);
-    //Rect Roi(pointRD - Point(width, height), pointRD);
 
     return Roi;
+}
+
+// 求倾斜 ROI 的 RotatedRect（中心、宽高、角度）
+cv::RotatedRect GetRegionRotatedROI(const std::vector<cv::Rect>& fullWhite, GridMeasureResult gridMeasureResult)
+{
+    // ---- 1. 参考点 ----
+    cv::Point pointRx3(fullWhite[fullWhite.size() - 3].x, fullWhite[fullWhite.size() - 3].y);
+    cv::Point pointLx2(fullWhite[1].x, fullWhite[1].y);
+    double dist = cv::norm(pointRx3 - pointLx2);
+
+    // ---- 2. 宽高 ----
+    int width = 0, radius = 0, height = 0;
+    if (gridMeasureResult.hDist > 0 && gridMeasureResult.vDist > 0) {
+        //width = static_cast<int>(gridMeasureResult.hDist * 3);
+        radius = static_cast<int>(gridMeasureResult.avgRadius);
+        height = static_cast<int>(gridMeasureResult.vDist * 3 - radius * 3);
+    }
+    else {
+        std::cout << "霍夫圆检测ROI失败，使用经验值" << std::endl;
+        gridMeasureResult.hDist = 62;
+        gridMeasureResult.vDist = 61;
+        gridMeasureResult.avgRadius = 12;
+        //width = static_cast<int>(gridMeasureResult.hDist * 3);
+        radius = static_cast<int>(gridMeasureResult.avgRadius);
+        height = static_cast<int>(gridMeasureResult.vDist * 3 - radius * 3);
+    }
+
+    width = static_cast<int>(dist) * 2 - fullWhite[0].width;
+
+    // ---- 3. 算倾斜角 theta = std::atan2(dy, dx); 逆时针为负 ----// 从左到右
+    double dx = fullWhite[fullWhite.size() - 1].x - fullWhite[0].x;
+    double dy = fullWhite[fullWhite.size() - 1].y - fullWhite[0].y;
+    double theta = std::atan2(dy, dx);
+    //std::cout << "倾斜角 theta = " << theta * 180.0 / CV_PI << " 度" << std::endl;
+
+    // ---- 4. 求倾斜后的右下角点 ----
+    double d = gridMeasureResult.vDist + radius;   // 沿“向上”方向偏移的距离
+
+    cv::Point2f pointRD;
+    double cosT = std::cos(theta);
+    double sinT = std::sin(theta);
+
+    if (std::abs(theta) < 5.0 * CV_PI / 180.0) {
+        // 倾斜小，竖直向上
+        pointRD = cv::Point2f(pointRx3.x, pointRx3.y - static_cast<float>(d));
+        std::cout << "不旋转" << std::endl;
+    }
+    else {
+        // 把偏移向量 (0, -d) 旋转 theta
+        double dx = 0.0, dy = -d;
+        double dxr = dx * cosT - dy * sinT;
+        double dyr = dx * sinT + dy * cosT;
+        pointRD = cv::Point2f(pointRx3.x + static_cast<float>(dxr),
+            pointRx3.y + static_cast<float>(dyr));
+    }
+
+    // ---- 5. 算 RotatedRect 的中心 ----
+    // 右下角点 -> 中心：向左上偏移 (width/2, height/2)，再旋转 theta
+    double cx = -width / 2.0;
+    double cy = -height / 2.0;
+    double cxr = cx * cosT - cy * sinT;
+    double cyr = cx * sinT + cy * cosT;
+
+    cv::Point2f center(pointRD.x + static_cast<float>(cxr),
+        pointRD.y + static_cast<float>(cyr));
+
+    // ---- 6. 构造 RotatedRect ----(矩形中心点Point2f、矩形宽高Size、旋转角度float)
+    // 注意：OpenCV 的 RotatedRect::angle 是顺时针为正，theta 是图像坐标系下的角
+    cv::RotatedRect rr(center, cv::Size2f(static_cast<float>(width),
+        static_cast<float>(height)),
+        static_cast<float>(theta * 180.0 / CV_PI));
+
+    return rr;
+}
+
+// 从 RotatedRect 提取摆正后的 ROI 图像
+cv::Mat extractRotatedROI(const cv::Mat& img, const cv::RotatedRect& rr)
+{
+    int outW = static_cast<int>(rr.size.width);
+    int outH = static_cast<int>(rr.size.height);
+    // 1. 取 RotatedRect 的 4 个角点
+    cv::Point2f pts[4];
+    rr.points(pts);
+
+    // 2. 排序：左上、右上、右下、左下
+    std::vector<cv::Point2f> v(pts, pts + 4);
+    std::sort(v.begin(), v.end(),
+        [](const cv::Point2f& a, const cv::Point2f& b) {
+            return (a.x + a.y) < (b.x + b.y);
+        });
+    cv::Point2f tl = v[0], br = v[3];
+    cv::Point2f tr, bl;
+    if (v[1].x > v[2].x) { tr = v[1]; bl = v[2]; }
+    else { tr = v[2]; bl = v[1]; }
+
+    cv::Point2f srcOrdered[4] = { tl, tr, br, bl };
+    cv::Point2f dstOrdered[4] = {
+        cv::Point2f(0, 0),
+        cv::Point2f(outW - 1.0f, 0),
+        cv::Point2f(outW - 1.0f, outH - 1.0f),
+        cv::Point2f(0, outH - 1.0f)
+    };
+
+    // 3. 透视变换，输出固定 W x H
+    cv::Mat M = cv::getPerspectiveTransform(srcOrdered, dstOrdered);
+    cv::Mat roi;
+    cv::warpPerspective(img, roi, M, cv::Size(outW, outH),
+        cv::INTER_LINEAR, cv::BORDER_REPLICATE);
+    return roi;
 }
 
 GridMeasureResult MeasureCircleGridDistances(const Mat& srcImg) {
@@ -717,14 +878,14 @@ GridMeasureResult MeasureCircleGridDistances(const Mat& srcImg) {
     }
 
     // 5. 输出结果
-    std::cout << "================ 测量结果 ================" << endl;
+   /* std::cout << "================ 测量结果 ================" << endl;
     std::cout << "水平方向最密集间距: " << hDist << " px (出现 " << hCount << " 次)" << endl;
     std::cout << "垂直方向最密集间距: " << vDist << endl;
 
     if (hDist > 0 && vDist > 0) {
         double ratio = static_cast<double>(hDist) / vDist;
         std::cout << "水平与垂直间距比例 (H:V) = 1 : " << ratio << endl;
-    }
+    }*/
     float radiusSum = 0.0f;
     for (const auto& c : circles) {
         radiusSum += c[2];
@@ -734,7 +895,7 @@ GridMeasureResult MeasureCircleGridDistances(const Mat& srcImg) {
     griMeasureResult.hDist = hDist;
     griMeasureResult.vDist = vDist;
     griMeasureResult.allCircle = circles;
-    std::cout << "==========================================" << endl;
+    //std::cout << "==========================================" << endl;
 
     //// 6. 可视化
     //Mat debugImg = srcImg.clone();
@@ -781,10 +942,16 @@ cv::Mat ExtractImageFeatures(const cv::Mat& testImg, const NineGridRoiImg& nineG
         {"Down",   nineGridRoiImg.NineDown},
         {"Left",   nineGridRoiImg.NineLeft},
         {"Right",  nineGridRoiImg.NineRight},
+        {"LeftUp",  nineGridRoiImg.NineLeftUp},
+        {"LeftDown",  nineGridRoiImg.NineLeftDown},
+        {"RightUp",  nineGridRoiImg.NineRightUp},
+        {"RightDown",  nineGridRoiImg.NineRightDown},
     };
 
     const int FEAT_PER_ROI = 7;
-    const int TOTAL_DIM = 5 * FEAT_PER_ROI;  // 35维
+    const int ROI_NUM = 9;
+    const int TOTAL_DIM = ROI_NUM * FEAT_PER_ROI;
+    //const int TOTAL_DIM = 5 * FEAT_PER_ROI;  // 35维
 
     cv::Mat featureVec(1, TOTAL_DIM, CV_32F);
     int col = 0;
@@ -888,15 +1055,15 @@ void trainSVMFromFile(const string& featureFilePath) {
     // === 保存打乱索引 ===
     {
         cv::Mat idxMat(idx);
-        cv::FileStorage fs("shuffle_idx.yml", cv::FileStorage::WRITE);
+        cv::FileStorage fs("shuffle_9_idx.yml", cv::FileStorage::WRITE);
         fs << "shuffle_idx" << idxMat;
         fs << "okNum" << okNum;
         fs << "badNum" << badNum;
         fs << "seed" << 12345;
         fs.release();
-        std::cout << "打乱索引已保存至 shuffle_idx.yml" << std::endl;
+        std::cout << "打乱索引已保存至 shuffle_9_idx.yml" << std::endl;
     }
-    Mat dataShuf(totalSamples, featDim, CV_32F);    
+    Mat dataShuf(totalSamples, featDim, CV_32F);
     Mat labelShuf(totalSamples, 1, CV_32S);
     for (int i = 0; i < totalSamples; ++i) {
         trainData.row(idx[i]).copyTo(dataShuf.row(i));  // 打乱索引的数据特征
@@ -908,7 +1075,7 @@ void trainSVMFromFile(const string& featureFilePath) {
     // 3. 划分训练/测试集 (80/20)
     Mat trainSamples, trainLabels;
     int trainCount = static_cast<int>(okNum * 0.8);
-    cv::vconcat(dataShuf.rowRange(0, trainCount), 
+    cv::vconcat(dataShuf.rowRange(0, trainCount),
         dataShuf.rowRange(100, 100 + trainCount), trainSamples);  // rowRange 是左闭右开：owRange(0, 159)：取第 0~158 行（前 159 行）
     cv::vconcat(labelShuf.rowRange(0, trainCount),
         labelShuf.rowRange(100, 100 + trainCount), trainLabels);
@@ -930,7 +1097,8 @@ void trainSVMFromFile(const string& featureFilePath) {
 
     //svm->setKernel(cv::ml::SVM::LINEAR); // 线性核
     svm->setKernel(cv::ml::SVM::RBF);   // RBF 核
-    svm->setGamma(1.0 / 35.0);  // 1 / 特征维度
+    //svm->setGamma(1.0 / 35.0);  // 1 / 特征维度
+    svm->setGamma(1.0 / 63.0);  // 1 / 特征维度
 
     svm->setC(1.0);
     svm->setTermCriteria(cv::TermCriteria(
@@ -957,13 +1125,12 @@ void trainSVMFromFile(const string& featureFilePath) {
         float response = svm->predict(testSamples.row(i));
         //int predicted = static_cast<int>(response);
         int predicted = (response > 0.5f) ? 1 : 0;
-        //int actual = testLabels.at<int>(i, 0);
         int actual = testLabels.at<int>(i, 0);
         //int actual = static_cast<int>(testLabels.at<float>(i, 0));
         string result = (predicted == actual) ? "OK" : "NG";
         if (predicted == actual) correct++;
         //if (i < 10 || total <= 10)
-            std::cout << "  样本[" << i << "] 预测=" << (predicted == 0 ? "好图" : "坏图")
+        std::cout << "  样本[" << i << "] 预测=" << (predicted == 0 ? "好图" : "坏图")
             << " 实际=" << (actual == 0 ? "好图" : "坏图")
             << " [" << result << "]" << endl;
     }
@@ -972,11 +1139,11 @@ void trainSVMFromFile(const string& featureFilePath) {
     std::cout << "\n准确率: " << correct << "/" << total << " = " << accuracy << "%" << endl;
 
     // 6. 保存模型和归一化参数
-    string svmName = "SVM_Model_" + to_string(correct) + "-" + to_string(total) + "_.xml";
+    string svmName = "SVM_Model_R9_" + to_string(correct) + "-" + to_string(total) + "_.xml";
     svm->save(svmName);
     std::cout << "模型已保存至: " << svmName << endl;
 
-    string fsNormName = "NormParams_" + to_string(correct) + "-" + to_string(total) + "_.xml";
+    string fsNormName = "NormParams_R9_" + to_string(correct) + "-" + to_string(total) + "_.xml";
     FileStorage fsNorm(fsNormName, cv::FileStorage::WRITE);
     fsNorm << "mean" << meanRow;
     fsNorm << "stddev" << stdRow;
@@ -985,7 +1152,7 @@ void trainSVMFromFile(const string& featureFilePath) {
 }
 
 // ================== 模块1：特征提取与保存 ==================
-void extractAndSaveFeatures(const string& goodImgDir, const string& badImgDir, const string& savePath) {
+void ExtractAndSaveFeatures(const string& goodImgDir, const string& badImgDir, const string& savePath) {
     vector<Mat> allFeatures;
     vector<int> allLabels;
 
@@ -999,60 +1166,24 @@ void extractAndSaveFeatures(const string& goodImgDir, const string& badImgDir, c
             if (ext != ".jpg" && ext != ".png" && ext != ".bmp") continue;
 
             string imgPath = entry.path().string(); // 完整路径字符串
+            std::cout << "     ==>>第" << processed << "张图片：" << imgPath;
             Mat testImg = imread(imgPath);
             if (testImg.empty()) { skipped++; continue; }
 
-            // --- 核心图像处理与特征提取逻辑 ---
-            vector<Rect> fullWhite = findFullWhiteRectsByIntegral(testImg);
-            if (fullWhite.size() != 7) { skipped++; continue; }
-
-            Point pointRx3(fullWhite[fullWhite.size() - 3].x, fullWhite[fullWhite.size() - 3].y);
-            GridMeasureResult gridMeasureResult = MeasureCircleGridDistances(testImg);
-            Rect Roi = GetRegionRoi(pointRx3, gridMeasureResult);
-
-            int Rwidth = Roi.width;
-            int Rheight = Roi.height - 8;
-
-            nineGridRoiImg.RoiCenter = Point(Roi.x + Roi.width / 2 - 1, Roi.y + Roi.height / 2 - 1);
-            nineGridRoiImg.NineCenter = Rect(nineGridRoiImg.RoiCenter - Point(Rwidth / 6, Rheight / 6),
-                nineGridRoiImg.RoiCenter + Point(Rwidth / 6, Rheight / 6));
-            nineGridRoiImg.NineUp = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 12,
-                nineGridRoiImg.RoiCenter.y - Rheight / 2 + 1, Rwidth / 6, Rheight / 3);
-            nineGridRoiImg.NineDown = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 12,
-                nineGridRoiImg.RoiCenter.y + Rheight / 6 - 1, Rwidth / 6, Rheight / 3);
-            nineGridRoiImg.NineLeft = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 2 + 1,
-                nineGridRoiImg.RoiCenter.y - Rheight / 12, Rwidth / 3, Rheight / 6);
-            nineGridRoiImg.NineRight = Rect(nineGridRoiImg.RoiCenter.x + Rwidth / 6 - 1,
-                nineGridRoiImg.RoiCenter.y - Rheight / 12, Rwidth / 3, Rheight / 6);
-
-            vector<pair<string, Rect>> roiList = {
-                {"Center", nineGridRoiImg.NineCenter}, {"Up", nineGridRoiImg.NineUp},
-                {"Down", nineGridRoiImg.NineDown}, {"Left", nineGridRoiImg.NineLeft},
-                {"Right", nineGridRoiImg.NineRight},
-            };
-
-            const int FEAT_PER_ROI = 7;
-            const int TOTAL_DIM = 5 * FEAT_PER_ROI;
-            Mat featVec(1, TOTAL_DIM, CV_32F);  // 1 * 35 特征图
-            int col = 0;
-            for (const auto& item : roiList) {
-                ROIFeature feat = ExtractROIFeature(testImg, item.second, item.first);
-                featVec.at<float>(0, col++) = static_cast<float>(feat.area);
-                featVec.at<float>(0, col++) = static_cast<float>(feat.perimeter);
-                featVec.at<float>(0, col++) = static_cast<float>(feat.width);
-                featVec.at<float>(0, col++) = static_cast<float>(feat.height);
-                featVec.at<float>(0, col++) = static_cast<float>(feat.aspectRatio);
-                featVec.at<float>(0, col++) = static_cast<float>(feat.circularity);
-                featVec.at<float>(0, col++) = static_cast<float>(feat.meanGray);
+            Mat featVec = ExtractOneImageFeature(testImg); // 提取一张图片特征 1 * 63 :(7 * 9) 一行
+            if (featVec.cols != 63 || featVec.type() != CV_32F) {
+                std::cout << "异常: " << imgPath
+                    << " cols=" << featVec.cols
+                    << " type=" << featVec.type() << std::endl;
+                skipped++;
+                continue;
             }
-            // ----------------------------------------
-
             allFeatures.push_back(featVec);
             allLabels.push_back(label);
             processed++;
 
-            if (processed % 20 == 0)
-                std::cout << "  已处理 " << processed << " 张" << endl;
+            /*if (processed % 20 == 0)
+                std::cout << "  已处理 " << processed << " 张" << endl;*/
         }
         std::cout << "  " << (label == 0 ? "好图" : "坏图") << " 完成: 成功" << processed
             << " 张, 跳过 " << skipped << " 张" << endl;
@@ -1067,14 +1198,7 @@ void extractAndSaveFeatures(const string& goodImgDir, const string& badImgDir, c
         return;
     }
 
-    // 使用 FileStorage 将数据写入 YAML 文件
-    //FileStorage fs(savePath, FileStorage::WRITE);
-    //fs << "features" << Mat(allFeatures); // 自动堆叠成大矩阵
-    //fs << "labels" << Mat(allLabels);
-    //fs.release();
-    //std::cout << "特征数据已保存至: " << savePath << endl;
-    // 正确写法：使用 vconcat 进行垂直堆叠
-    FileStorage fs(savePath, FileStorage::WRITE);
+    FileStorage fs(savePath, FileStorage::WRITE);   // 创建 或 先清空文件
     if (!allFeatures.empty()) {
         cv::Mat featureMatrix;
         cv::vconcat(allFeatures, featureMatrix); // 将 vector<Mat> 拼接成 N行 x M列 的大矩阵
@@ -1117,54 +1241,7 @@ int predictImage(const string& modelPath, const string& normPath, const string& 
         return -1;
     }
 
-    // --- 核心图像处理与特征提取逻辑（与你训练时一模一样）---
-    vector<Rect> fullWhite = findFullWhiteRectsByIntegral(testImg);
-    if (fullWhite.size() != 7) {
-        cerr << "图片特征点数量不符，跳过" << endl;
-        return -1;
-    }
-
-    Point pointRx3(fullWhite[fullWhite.size() - 3].x, fullWhite[fullWhite.size() - 3].y);
-    GridMeasureResult gridMeasureResult = MeasureCircleGridDistances(testImg);
-    Rect Roi = GetRegionRoi(pointRx3, gridMeasureResult);
-
-    int Rwidth = Roi.width;
-    int Rheight = Roi.height - 8;
-
-    // 注意：这里需要确保 nineGridRoiImg 结构体已定义
-    nineGridRoiImg.RoiCenter = Point(Roi.x + Roi.width / 2 - 1, Roi.y + Roi.height / 2 - 1);
-    nineGridRoiImg.NineCenter = Rect(nineGridRoiImg.RoiCenter - Point(Rwidth / 6, Rheight / 6),
-        nineGridRoiImg.RoiCenter + Point(Rwidth / 6, Rheight / 6));
-    nineGridRoiImg.NineUp = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 12,
-        nineGridRoiImg.RoiCenter.y - Rheight / 2 + 1, Rwidth / 6, Rheight / 3);
-    nineGridRoiImg.NineDown = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 12,
-        nineGridRoiImg.RoiCenter.y + Rheight / 6 - 1, Rwidth / 6, Rheight / 3);
-    nineGridRoiImg.NineLeft = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 2 + 1,
-        nineGridRoiImg.RoiCenter.y - Rheight / 12, Rwidth / 3, Rheight / 6);
-    nineGridRoiImg.NineRight = Rect(nineGridRoiImg.RoiCenter.x + Rwidth / 6 - 1,
-        nineGridRoiImg.RoiCenter.y - Rheight / 12, Rwidth / 3, Rheight / 6);
-
-    vector<pair<string, Rect>> roiList = {
-        {"Center", nineGridRoiImg.NineCenter}, {"Up", nineGridRoiImg.NineUp},
-        {"Down", nineGridRoiImg.NineDown}, {"Left", nineGridRoiImg.NineLeft},
-        {"Right", nineGridRoiImg.NineRight},
-    };
-
-    const int FEAT_PER_ROI = 7;
-    const int TOTAL_DIM = 5 * FEAT_PER_ROI;
-    Mat featVec(1, TOTAL_DIM, CV_32F);
-    int col = 0;
-    for (const auto& item : roiList) {
-        ROIFeature feat = ExtractROIFeature(testImg, item.second, item.first);
-        featVec.at<float>(0, col++) = static_cast<float>(feat.area);
-        featVec.at<float>(0, col++) = static_cast<float>(feat.perimeter);
-        featVec.at<float>(0, col++) = static_cast<float>(feat.width);
-        featVec.at<float>(0, col++) = static_cast<float>(feat.height);
-        featVec.at<float>(0, col++) = static_cast<float>(feat.aspectRatio);
-        featVec.at<float>(0, col++) = static_cast<float>(feat.circularity);
-        featVec.at<float>(0, col++) = static_cast<float>(feat.meanGray);
-    }
-    // -------------------------------------------------------
+    Mat featVec = ExtractOneImageFeature(testImg); // 提取一张图片特征 1 * 63 :(7 * 9) 一行
 
     // 4. 使用归一化参数对特征进行标准化（必须与训练时一致）
     for (int c = 0; c < featVec.cols; ++c) {
@@ -1179,8 +1256,8 @@ int predictImage(const string& modelPath, const string& normPath, const string& 
     //int predicted = static_cast<int>(response);
     int predicted = (response > 0.5f) ? 1 : 0;
 
-    cout << "图片: " << imgPath << " 预测结果: "
-        << (predicted == 0 ? "好图" : "坏图") << endl;
+    cout << "图片: " << imgPath << " 预测结果: " << response
+        << (predicted == 0 ? "->好图" : "坏图") << endl;
 
     return predicted;
 }
@@ -1289,3 +1366,106 @@ void batchPredictFolder(const string& modelPath,
             cout << "  " << p << endl;
     }
 }
+
+
+// --- 核心图像处理与特征提取逻辑（与你训练时一模一样）---
+Mat ExtractOneImageFeature(const Mat& testImg)
+{
+    vector<Rect> fullWhite = findFullWhiteRectsByIntegral(testImg);
+    if (fullWhite.size() != 7) {
+        cerr << "图片特征点数量不符，跳过" << endl;
+        return Mat();
+    }
+
+    GridMeasureResult gridMeasureResult = MeasureCircleGridDistances(testImg);
+
+    // ---- 3. 算倾斜角 theta = std::atan2(dy, dx); 逆时针为负 ----
+    // 从左到右
+    double dx = fullWhite[fullWhite.size() - 1].x - fullWhite[0].x;
+    double dy = fullWhite[fullWhite.size() - 1].y - fullWhite[0].y;
+    double theta = std::atan2(dy, dx);
+    std::cout << "倾斜角 theta = " << theta * 180.0 / CV_PI << " 度" << std::endl;
+    Rect Roi;
+    Mat rotationRoiImg;
+    if (std::abs(theta) < 1.0 * CV_PI / 180.0) {
+        std::cout << "不旋转" << std::endl;
+        Roi = GetRegionRoi(fullWhite, gridMeasureResult);
+    }
+    else {
+        // 1. 求倾斜 ROI
+        cv::RotatedRect rr = GetRegionRotatedROI(fullWhite, gridMeasureResult);
+
+        // 2. 摆正并提取，输出固定 width x height
+        rotationRoiImg = extractRotatedROI(testImg, rr);
+        Roi = Rect(0, 0, rotationRoiImg.cols, rotationRoiImg.rows);
+    }
+
+    int Rwidth = Roi.width;
+    int Rheight = Roi.height;
+
+    // nineGridRoiImg 结构体
+    nineGridRoiImg.RoiCenter = Point(Roi.x + Roi.width / 2 - 1, Roi.y + Roi.height / 2 - 1);
+
+    nineGridRoiImg.NineCenter = Rect(nineGridRoiImg.RoiCenter - Point(Rwidth / 6, Rheight / 6),
+        nineGridRoiImg.RoiCenter + Point(Rwidth / 6, Rheight / 6));
+    nineGridRoiImg.NineUp = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 12,
+        nineGridRoiImg.RoiCenter.y - Rheight / 2 + 1, Rwidth / 6, Rheight / 3);
+    nineGridRoiImg.NineDown = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 12,
+        nineGridRoiImg.RoiCenter.y + Rheight / 6 - 1, Rwidth / 6, Rheight / 3);
+    nineGridRoiImg.NineLeft = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 2 + 1,
+        nineGridRoiImg.RoiCenter.y - Rheight / 12, Rwidth / 3, Rheight / 6);
+    nineGridRoiImg.NineRight = Rect(nineGridRoiImg.RoiCenter.x + Rwidth / 6 - 1,
+        nineGridRoiImg.RoiCenter.y - Rheight / 12, Rwidth / 3, Rheight / 6);
+
+    nineGridRoiImg.NineLeftUp = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 2 + 1,
+        nineGridRoiImg.RoiCenter.y - Rheight / 2 + 1,
+        Rwidth / 3, Rheight / 3);
+    nineGridRoiImg.NineLeftDown = Rect(nineGridRoiImg.RoiCenter.x - Rwidth / 2 + 1,
+        nineGridRoiImg.RoiCenter.y + Rheight / 6 + 1,
+        Rwidth / 3, Rheight / 3);
+    nineGridRoiImg.NineRightUp = Rect(nineGridRoiImg.RoiCenter.x + Rwidth / 6 + 1,
+        nineGridRoiImg.RoiCenter.y - Rheight / 2 + 1,
+        Rwidth / 3, Rheight / 3);
+    nineGridRoiImg.NineRightDown = Rect(nineGridRoiImg.RoiCenter.x + Rwidth / 6 + 1,
+        nineGridRoiImg.RoiCenter.y + Rheight / 6,
+        Rwidth / 3, Rheight / 3);
+
+    vector<pair<string, Rect>> roiList = {
+        {"Center", nineGridRoiImg.NineCenter}, {"Up", nineGridRoiImg.NineUp},
+        {"Down", nineGridRoiImg.NineDown}, {"Left", nineGridRoiImg.NineLeft},
+        {"Right", nineGridRoiImg.NineRight},{"LeftUp",  nineGridRoiImg.NineLeftUp},
+        {"LeftDown",  nineGridRoiImg.NineLeftDown}, {"RightUp",  nineGridRoiImg.NineRightUp},
+        {"RightDown",  nineGridRoiImg.NineRightDown},
+    };
+
+    const int FEAT_PER_ROI = 7;
+    const int TOTAL_DIM = roiList.size() * FEAT_PER_ROI;
+    Mat featVec(1, TOTAL_DIM, CV_32F);
+    int col = 0;
+    for (const auto& item : roiList) {
+        ROIFeature feat;
+        if (std::abs(theta) < 1.0 * CV_PI / 180.0)
+            feat = ExtractROIFeature(testImg, item.second, item.first);
+        else
+            feat = ExtractROIFeature(rotationRoiImg, item.second, item.first);
+
+        featVec.at<float>(0, col++) = static_cast<float>(feat.area);
+        featVec.at<float>(0, col++) = static_cast<float>(feat.perimeter);
+        featVec.at<float>(0, col++) = static_cast<float>(feat.width);
+        featVec.at<float>(0, col++) = static_cast<float>(feat.height);
+        featVec.at<float>(0, col++) = static_cast<float>(feat.aspectRatio);
+        featVec.at<float>(0, col++) = static_cast<float>(feat.circularity);
+        featVec.at<float>(0, col++) = static_cast<float>(feat.meanGray);
+    }
+    return featVec;
+}
+
+//// 不旋转图像
+//void NoRetationImage(const vector<Rect>& fullWhite, const GridMeasureResult gridMeasureResult)
+//{
+//
+//}
+//void RetationImage()
+//{
+//
+//}
